@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Редактирование записи</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .text-preview {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .text-preview h3 {
+            color: #2c3e50;
+            margin-bottom: 0.8rem;
+        }
+        .text-content {
+            background: white;
+            padding: 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Редактирование записи ID: {{ record.id }}</h1>
+
+        <div class="text-preview">
+            <h3>Исходный текст VOSK:</h3>
+            <div class="text-content">
+                {{ raw_text if raw_text else "Текст не распознан" }}
+            </div>
+        </div>
+
+        <div class="text-preview">
+            <h3>Текст после конвертации:</h3>
+            <div class="text-content">
+                {{ processed_text if processed_text else "Нет данных для отображения" }}
+            </div>
+        </div>
+
+        <form action="/update/{{ record.id }}" method="post">
+            <div class="form-group">
+                <label>Лицевой счет:</label>
+                <input type="text"
+                       name="account"
+                       value="{{ record.account_number }}"
+                       pattern="\d{9}"
+                       title="Ровно 9 цифр"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label>Показания:</label>
+                <input type="number"
+                       name="meter"
+                       value="{{ record.scale1_value }}"
+                       min="0"
+                       max="99999"
+                       required>
+            </div>
+
+            <button type="submit" class="btn-action btn-blue">Сохранить</button>
+            <a href="/records" class="btn-action btn-gray">Отмена</a>
+        </form>
+    </div>
+</body>
+</html>

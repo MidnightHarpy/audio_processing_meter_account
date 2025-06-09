@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Добавление показаний</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .upload-card {
+            max-width: 600px;
+            margin: 3rem auto;
+            text-align: center;
+        }
+        #loading {
+            display: none;
+            margin: 1rem 0;
+            color: #3498db;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            color: white;
+            z-index: 1000;
+        }
+        .toast.success {
+            background: #2ecc71;
+        }
+        .toast.error {
+            background: #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="btn-home">← На главную</a>
+
+        <div class="card upload-card">
+            <h1>📤 Загрузка новых показаний</h1>
+            <form onsubmit="return uploadNewReading(this)" class="upload-form">
+                <input type="file" name="file" accept="audio/*" required
+                    class="custom-file-input" id="audioFile">
+                <button type="submit" class="btn-main">Загрузить аудио</button>
+                <div id="loading">Обработка файла...</div>
+                <div id="result"></div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        async function uploadNewReading(form) {
+            const formData = new FormData(form);
+            const resultDiv = document.getElementById('result');
+            const loading = document.getElementById('loading');
+            const submitBtn = form.querySelector('button[type="submit"]');
+
+            submitBtn.disabled = true;
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                showToast(data.message, response.ok ? 'success' : 'error');
+
+                if(response.ok) {
+                    form.reset();
+                    setTimeout(() => window.location.href = '/records', 2000);
+                }
+
+            } catch (error) {
+                showToast('Ошибка соединения', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+            return false;
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

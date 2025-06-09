@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      bash -c "alembic upgrade head && 
+      uvicorn app.main:fastapi_app 
+      --host 0.0.0.0 
+      --port 8000 
+      --workers 1 
+      --loop asyncio 
+      --timeout-keep-alive 600"
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - VOSK_MODEL_PATH=/app/vosk_models/ru
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - PYTHONPATH=/app
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./templates:/app/templates
+      - ./static:/app/static
+      - ./vosk_models/ru:/app/vosk_models/ru
+      - ./data_loader.py:/app/data_loader.py
+      - ./historical_dataset.csv:/app/historical_dataset.csv
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Корректировка записи</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .correction-card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            margin: 2rem auto;
+            max-width: 800px;
+        }
+
+        .text-preview {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .text-preview h3 {
+            color: #2c3e50;
+            margin-bottom: 0.8rem;
+        }
+
+        .text-content {
+            background: white;
+            padding: 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/failed" class="btn-back">← Назад к ошибкам</a>
+
+        <div class="correction-card">
+            <h1>Корректировка записи #{{ attempt.id[:8] }}</h1>
+
+            <div class="text-preview">
+                <h3>Исходный текст распознавания:</h3>
+                <div class="text-content">
+                    {{ attempt.raw_text if attempt.raw_text else "Текст не распознан" }}
+                </div>
+            </div>
+
+            <div class="text-preview">
+                <h3>Обработанный текст:</h3>
+                <div class="text-content">
+                    {{ attempt.processed_text if attempt.processed_text else "Нет данных для отображения" }}
+                </div>
+            </div>
+
+            <form class="correction-form" action="/retry_attempt/{{ attempt.id }}" method="post">
+                <div class="form-group">
+                    <label>Лицевой счет:</label>
+                    <input type="text"
+                           name="account"
+                           value="{{ account }}"
+                           pattern="\d{9}"
+                           title="Ровно 9 цифр"
+                           required>
+                </div>
+
+                <div class="form-group">
+                    <label>Показания счетчика:</label>
+                    <input type="number"
+                           name="meter"
+                           value="{{ meter }}"
+                           min="0"
+                           max="99999"
+                           required>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Сохранить в записях</button>
+                    <a href="/failed" class="btn-secondary">Отмена</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

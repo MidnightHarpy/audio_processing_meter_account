@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>История показаний</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .pagination {
+            margin: 2rem 0;
+            text-align: center;
+        }
+        .pagination-info {
+            margin: 1rem 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+        .load-more-btn {
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+        }
+        .anomaly-tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+
+        .anomaly-tooltip .tooltip-content {
+            visibility: hidden;
+            background-color: #fff;
+            color: #333;
+            border: 2px solid #e74c3c;
+            border-radius: 6px;
+            padding: 15px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            min-width: 250px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            font-size: 14px;
+        }
+
+        .anomaly-tooltip:hover .tooltip-content {
+            visibility: visible;
+        }
+
+        .tooltip-header {
+            color: #e74c3c;
+            font-weight: bold;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .tooltip-row {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .tooltip-label {
+            color: #666;
+            margin-right: 10px;
+        }
+
+        .no-records {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 18px;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .reset-filters {
+            background-color: #95a5a6 !important;
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="btn-home">← На главную</a>
+        <h1>История показаний</h1>
+
+        <!-- Фильтры -->
+        <div class="filter-group">
+            <div class="search-box">
+                <input type="text" id="searchInput"
+                       placeholder="Поиск по номеру счета..."
+                       value="{{ current_filters.account_number }}">
+                <button onclick="updateFilters()" class="btn-action btn-blue">🔍 Поиск</button>
+            </div>
+
+            <select id="yearFilter" class="filter-select">
+                <option value="">Все годы</option>
+                {% for year in years %}
+                <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+                {% endfor %}
+            </select>
+
+            <select id="monthFilter" class="filter-select">
+                <option value="">Все месяцы</option>
+                {% for num, name in months %}
+                <option value="{{ num }}" {% if num == selected_month %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+
+            <div class="anomaly-filter">
+                <label class="checkbox-label">
+                    <input type="checkbox"
+                           id="anomaliesFilter"
+                           {% if current_filters.anomalies_only %}checked{% endif %}
+                           onchange="updateFilters()">
+                    Только аномалии ⚠️
+                </label>
+            </div>
+
+            <button onclick="clearFilters()" class="btn-action reset-filters">Сбросить фильтры</button>
+        </div>
+
+        <!-- Информация о пагинации -->
+        <div class="pagination-info">
+            Страница {{ page }} • Записей на странице: {{ records|length }}
+        </div>
+
+        <!-- Таблица -->
+        {% if records %}
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Лицевой счет</th>
+                        <th>Показания</th>
+                        <th>Статус</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in records %}
+                    <tr class="{% if record.is_anomaly %}anomaly{% endif %}">
+                        <td>{{ record.timestamp.strftime('%d.%m.%Y %H:%M') }}</td>
+                        <td>{{ record.account_number }}</td>
+                        <td>{{ record.scale1_value }}</td>
+                        <td>
+                            {% if record.is_anomaly %}
+                            <div class="anomaly-tooltip">
+                                ⚠️
+                                <div class="tooltip-content">
+                                    <div class="tooltip-header">Обнаружена аномалия</div>
+                                    <div class="tooltip-row">
+                                        <span class="tooltip-label">Ожидаемый диапазон:</span>
+                                        <span>{{ record.expected_range }}</span>
+                                    </div>
+                                    <div class="tooltip-row">
+                                        <span class="tooltip-label">Текущее значение:</span>
+                                        <span>{{ record.scale1_value }}</span>
+                                    </div>
+                                    <div class="tooltip-row">
+                                        <span class="tooltip-label">Отклонение:</span>
+                                        <span>{{ "%.2f"|format(record.deviation_score * 100) }}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            {% else %}
+                            <span class="status-ok">✓</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button onclick="deleteRecord('{{ record.id }}')"
+                                    class="btn-action btn-red">Удалить</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="no-records">
+            Нет записей, соответствующих выбранным фильтрам
+        </div>
+        {% endif %}
+
+        {% if has_next %}
+        <div class="pagination">
+            <a href="?page={{ page + 1 }}&account_number={{ current_filters.account_number }}&year={{ current_filters.year }}&month={{ current_filters.month }}"
+               class="btn-action load-more-btn">
+                Показать ещё 100 записей
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+
+        // Функция для построения URL с параметрами
+        function buildUrl(page) {
+            const params = new URLSearchParams();
+
+            // Фильтры
+            const year = document.getElementById('yearFilter').value;
+            const month = document.getElementById('monthFilter').value;
+            const search = document.getElementById('searchInput').value.trim();
+
+            if (year) params.set('year', year);
+            if (month) params.set('month', month);
+            if (search) params.set('account_number', search);
+
+            // Пагинация
+            params.set('page', page || 1);
+
+            return '/records?' + params.toString();
+        }
+
+        // Обновление фильтров
+        function updateFilters() {
+            const params = new URLSearchParams();
+            const accountNumber = document.getElementById('searchInput').value.trim();
+            const filters = {
+                account_number: document.getElementById('searchInput').value.trim(),
+                year: document.getElementById('yearFilter').value,
+                month: document.getElementById('monthFilter').value,
+                anomalies_only: document.getElementById('anomaliesFilter').checked,
+                page: 1
+            };
+
+            if (document.getElementById('anomaliesFilter').checked) {
+                params.set('anomalies_only', 'true');
+            }
+
+            for (const [key, value] of Object.entries(filters)) {
+                if (value) params.set(key, value);
+            }
+
+            window.location.search = params.toString();
+        }
+
+        // Очистка фильтров
+        function clearFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('yearFilter').selectedIndex = 0;
+            document.getElementById('monthFilter').selectedIndex = 0;
+            document.getElementById('anomaliesFilter').checked = false;
+            updateFilters();
+        }
+
+        // Шаблонизатор для кнопки "Показать ещё"
+        function build_next_page_url() {
+            const currentParams = new URLSearchParams(window.location.search);
+            const currentPage = parseInt({{ page }}) || 1;
+            currentParams.set('page', currentPage + 1);
+            return '/records?' + currentParams.toString();
+        }
+
+        // Функции фильтрации
+        function updateFilters() {
+            const params = new URLSearchParams();
+
+            const accountNumber = document.getElementById('searchInput').value.trim();
+            const year = document.getElementById('yearFilter').value;
+            const month = document.getElementById('monthFilter').value;
+            const anomaliesOnly = document.getElementById('anomaliesFilter').checked;
+
+            if (accountNumber) params.set('account_number', accountNumber);
+            if (year) params.set('year', year);
+            if (month) params.set('month', month);
+            if (anomaliesOnly) params.set('anomalies_only', 'true');
+            params.set('page', 1);
+
+            window.location.search = params.toString();
+        }
+
+        function clearFilters() {
+            document.getElementById('yearFilter').value = '';
+            document.getElementById('monthFilter').value = '';
+            document.getElementById('searchInput').value = '';
+            updateFilters();
+        }
+
+        // Обработчики событий
+        document.getElementById('yearFilter').addEventListener('change', updateFilters);
+        document.getElementById('monthFilter').addEventListener('change', updateFilters);
+        document.getElementById('anomaliesFilter').addEventListener('change', updateFilters);
+
+        document.getElementById('searchInput').addEventListener('keyup', function(e) {
+            if (e.key === 'Enter') updateFilters();
+        });
+
+        // Обработчик кнопки поиска
+        document.querySelector('.btn-blue').addEventListener('click', updateFilters);
+
+        // Удаление записи
+        async function deleteRecord(recordId) {
+            if (!confirm('Вы уверены, что хотите удалить эту запись?')) return;
+
+            try {
+                const response = await fetch(`/delete/${recordId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    document.querySelector(`tr[data-id="${recordId}"]`).remove();
+                    showToast('Запись успешно удалена', 'success');
+                } else {
+                    const error = await response.json();
+                    showToast(error.detail || 'Ошибка удаления', 'error');
+                }
+            } catch (e) {
+                showToast('Ошибка сети', 'error');
+            }
+        }
+
+        // Всплывающие уведомления
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Восстановление состояния при загрузке
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search)
+            document.getElementById('searchInput').value = params.get('account_number') || ''
+            document.getElementById('yearFilter').value = params.get('year') || ''
+            document.getElementById('monthFilter').value = params.get('month') || ''
+        })
+    </script>
+</body>
+</html>

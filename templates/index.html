@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Система управления показаниями</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 3rem;
+            padding: 3rem 0;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 2.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: transform 0.3s, box-shadow 0.3s;
+            min-height: 280px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            border-top: 4px solid #3498db;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+        }
+
+        .btn-main {
+            background: #3498db;
+            color: white!important;
+            padding: 1.5rem 3rem;
+            border-radius: 30px;
+            font-size: 1.1rem;
+            font-weight: 500;
+            text-align: center;
+            transition: all 0.3s ease;
+            border: 2px solid #2980b9;
+            display: block;
+            width: fit-content;
+            margin: 1.5rem auto 0;
+        }
+
+        .btn-main:hover {
+            background: #2980b9;
+            transform: scale(1.05);
+            text-decoration: none;
+        }
+
+        .main-menu {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .menu-link {
+            padding: 1rem 2rem;
+            border-radius: 25px;
+            background: #3498db;
+            color: white!important;
+            transition: all 0.3s ease;
+        }
+
+        .menu-link:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <header class="header">
+            <h1>Система приёма показаний приборов учёта</h1>
+            <p class="subtitle">Автоматизированная обработка голосовых сообщений</p>
+        </header>
+
+        <div class="dashboard">
+            <div class="card">
+                <h2>📥 Новые показания</h2>
+                <p>Загрузка аудиозаписей с новыми показаниями</p>
+                <a href="/upload" class="btn-main">Перейти к загрузке</a>
+            </div>
+
+            <div class="card">
+                <h2>⚠ Проблемные записи</h2>
+                <p>Повторная обработка неудачных попыток</p>
+                <a href="/failed" class="btn-main">Просмотреть записи</a>
+            </div>
+
+            <div class="card">
+                <h2>📖 История показаний</h2>
+                <p>Архив всех успешных обработок</p>
+                <a href="/records" class="btn-main">Открыть историю</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
