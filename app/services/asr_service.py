@@ -15,7 +15,7 @@ import concurrent.futures
 
 logger = logging.getLogger(__name__)
 TRANSCODE_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
-MAX_DURATION_MS = 300 * 1000
+MAX_DURATION_MS = 120000
 
 class ASRService:
     _model = None
