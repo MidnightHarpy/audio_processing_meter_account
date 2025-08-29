@@ -41,8 +41,8 @@ def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, ser
                         record_elem = etree.fromstring(f"<record>{record_content}</record>")
                         # Добавляем запись к корневому элементу
                         root.append(record_elem)
-                    except Exception as e:
-                        print(f"Не удалось обработать запись: {e}")
+                    except Exception as inner_e:
+                        print(f"Не удалось обработать запись: {inner_e}")
                         continue
             else:
                 print("Не удалось найти корневой элемент")
@@ -68,17 +68,18 @@ def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, ser
         files_to_keep = set()
         files_to_delete = set(all_files)
         updated_records = []
-        services_to_keep = list(service_mapping.keys())
+        # Переименовываем переменную, чтобы избежать shadowing
+        valid_services = list(service_mapping.keys())
         
         # Находим все записи
-        records = root.findall('.//record') if hasattr(root, 'findall') else []
+        records = root.findall('.//record')
         
         for record in records:
             try:
                 service_elem = record.find('service')
-                service = service_elem.text.strip() if service_elem is not None and service_elem.text else ''
+                service_name = service_elem.text.strip() if service_elem is not None and service_elem.text else ''
                 
-                if service not in services_to_keep:
+                if service_name not in valid_services:
                     continue
                     
                 attachments_to_keep = []
@@ -122,8 +123,8 @@ def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, ser
         for record in updated_records:
             try:
                 service_elem = record.find('service')
-                service = service_elem.text.strip() if service_elem is not None and service_elem.text else ''
-                english_folder = service_mapping.get(service, service)
+                service_name = service_elem.text.strip() if service_elem is not None and service_elem.text else ''
+                english_folder = service_mapping.get(service_name, service_name)
                 safe_folder = "".join(c for c in english_folder if c.isalnum() or c in (' ', '-', '_')).rstrip()
                 service_folder = os.path.join(target_base_folder, safe_folder)
                 
@@ -147,7 +148,10 @@ def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, ser
         # Сохранение нового XML
         try:
             # Создаем новый корневой элемент с тем же тегом, что и оригинальный
-            new_root = etree.Element(root.tag)
+            if hasattr(root, 'tag'):
+                new_root = etree.Element(root.tag)
+            else:
+                new_root = etree.Element('data')
             
             # Добавляем все обновленные записи
             for record in updated_records:
