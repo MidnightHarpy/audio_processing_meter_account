@@ -1,0 +1,161 @@
+import os
+import shutil
+import re
+from collections import defaultdict
+from lxml import etree
+
+def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, service_mapping, extensions_to_keep):
+    try:
+        # Проверка существования файла
+        if not os.path.exists(xml_path):
+            print(f"Ошибка: Файл {xml_path} не существует")
+            return None
+            
+        if os.path.getsize(xml_path) == 0:
+            print(f"Ошибка: Файл {xml_path} пуст")
+            return None
+        
+        # Чтение и очистка XML
+        with open(xml_path, 'r', encoding='utf-8', errors='replace') as f:
+            xml_content = f.read()
+        
+        # Очистка от некорректных символов
+        xml_content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', xml_content)
+        
+        # Парсинг XML
+        parser = etree.XMLParser(recover=True, encoding='utf-8')
+        try:
+            root = etree.fromstring(xml_content, parser=parser)
+        except etree.XMLSyntaxError as e:
+            print(f"Ошибка синтаксиса XML: {e}")
+            # Попытка ручного восстановления
+            match = re.search(r'<([^>]+)>', xml_content)
+            if match:
+                root_tag = match.group(1).split()[0]
+                root = etree.Element(root_tag)
+                # Добавление записей через регулярные выражения
+                records = re.findall(r'<record>(.*?)</record>', xml_content, re.DOTALL)
+                for record_content in records:
+                    try:
+                        record_elem = etree.fromstring(f"<record>{record_content}</record>")
+                        root.append(record_elem)
+                    except:
+                        continue
+            else:
+                print("Не удалось найти корневой элемент")
+                return None
+        
+        # Проверка корневого элемента
+        if root is None:
+            print("Не удалось получить корневой элемент XML")
+            return None
+            
+        # Создание целевой папки
+        if not os.path.exists(target_base_folder):
+            os.makedirs(target_base_folder)
+        
+        # Сбор файлов
+        try:
+            all_files = set(os.listdir(data_folder))
+        except Exception as e:
+            print(f"Ошибка при чтении папки: {e}")
+            return None
+        
+        # Обработка записей
+        files_to_keep = set()
+        files_to_delete = set(all_files)
+        updated_records = []
+        services_to_keep = list(service_mapping.keys())
+        
+        for record in root.findall('record'):
+            try:
+                service_elem = record.find('service')
+                service = service_elem.text.strip() if service_elem is not None and service_elem.text else ''
+                
+                if service not in services_to_keep:
+                    continue
+                    
+                attachments_to_keep = []
+                for att in record.findall('attachments'):
+                    if att.text is not None:
+                        filename = att.text.strip()
+                        _, ext = os.path.splitext(filename)
+                        
+                        if ext.lower() in extensions_to_keep and filename in all_files:
+                            attachments_to_keep.append(filename)
+                            files_to_keep.add(filename)
+                            files_to_delete.discard(filename)
+                
+                if attachments_to_keep:
+                    # Удаляем старые вложения
+                    for att in record.findall('attachments'):
+                        record.remove(att)
+                    
+                    # Добавляем новые вложения
+                    for filename in attachments_to_keep:
+                        att_elem = etree.SubElement(record, 'attachments')
+                        att_elem.text = filename
+                    
+                    updated_records.append(record)
+                    
+            except Exception as e:
+                print(f"Ошибка обработки записи: {e}")
+                continue
+        
+        # Удаление файлов
+        for filename in files_to_delete:
+            try:
+                os.remove(os.path.join(data_folder, filename))
+                print(f"Удален: {filename}")
+            except Exception as e:
+                print(f"Ошибка удаления {filename}: {e}")
+        
+        # Перемещение файлов
+        for record in updated_records:
+            try:
+                service = record.find('service').text.strip()
+                english_folder = service_mapping.get(service, service)
+                safe_folder = "".join(c for c in english_folder if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                service_folder = os.path.join(target_base_folder, safe_folder)
+                
+                if not os.path.exists(service_folder):
+                    os.makedirs(service_folder)
+                
+                for att in record.findall('attachments'):
+                    filename = att.text.strip()
+                    src = os.path.join(data_folder, filename)
+                    dst = os.path.join(service_folder, filename)
+                    
+                    if os.path.exists(src):
+                        shutil.move(src, dst)
+                        print(f"Перемещен: {filename} -> {safe_folder}")
+                        
+            except Exception as e:
+                print(f"Ошибка перемещения: {e}")
+                continue
+        
+        # Сохранение нового XML
+        new_root = etree.Element(root.tag)
+        for record in updated_records:
+            new_root.append(record)
+        
+        new_tree = etree.ElementTree(new_root)
+        new_xml_path = os.path.join(target_base_folder, "filtered_data.xml")
+        new_tree.write(new_xml_path, encoding='utf-8', xml_declaration=True, pretty_print=True)
+        
+        print(f"\nФильтрация завершена:")
+        print(f"Сохрано записей: {len(updated_records)}")
+        print(f"Сохранено файлов: {len(files_to_keep)}")
+        print(f"Удалено файлов: {len(files_to_delete)}")
+        
+        return {
+            'remaining_records': len(updated_records),
+            'saved_files': len(files_to_keep),
+            'deleted_files': len(files_to_delete)
+        }
+            
+    except Exception as e:
+        print(f"Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
