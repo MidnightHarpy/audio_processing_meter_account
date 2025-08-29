@@ -2,58 +2,99 @@ import os
 import shutil
 import re
 from collections import defaultdict
+from tqdm import tqdm
+import xml.etree.ElementTree as ET
 
-def parse_xml_with_regex(xml_path):
+def parse_xml_efficiently(xml_path, service_mapping):
     """
-    Парсим XML с помощью регулярных выражений, минуя стандартные парсеры
+    Эффективный парсинг XML файла с обработкой CDATA и прогресс-баром
     """
     services_data = defaultdict(list)
+    total_records = 0
     
+    # Сначала подсчитаем общее количество записей для прогресс-бара
+    print("Подсчет количества записей...")
+    with open(xml_path, 'r', encoding='utf-8', errors='replace') as f:
+        for line in f:
+            if '<record>' in line:
+                total_records += 1
+    
+    print(f"Найдено {total_records} записей. Обработка...")
+    
+    # Теперь парсим записи
+    with open(xml_path, 'r', encoding='utf-8', errors='replace') as f:
+        current_record = None
+        record_content = []
+        in_record = False
+        
+        # Используем tqdm для отображения прогресса
+        pbar = tqdm(total=total_records, desc="Обработка записей")
+        
+        for line in f:
+            if '<record>' in line:
+                in_record = True
+                record_content = [line]
+            elif '</record>' in line and in_record:
+                record_content.append(line)
+                in_record = False
+                
+                # Обрабатываем завершенную запись
+                record_text = ''.join(record_content)
+                process_record(record_text, services_data, service_mapping)
+                
+                # Обновляем прогресс-бар
+                pbar.update(1)
+                record_content = []
+            elif in_record:
+                record_content.append(line)
+        
+        pbar.close()
+    
+    return services_data
+
+def process_record(record_text, services_data, service_mapping):
+    """
+    Обработка одной записи record
+    """
     try:
-        with open(xml_path, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
+        # Извлекаем данные с помощью регулярных выражений
+        id_match = re.search(r'<id>(.*?)</id>', record_text, re.DOTALL)
+        service_match = re.search(r'<service>(.*?)</service>', record_text, re.DOTALL)
+        topic_match = re.search(r'<topic>(.*?)</topic>', record_text, re.DOTALL)
+        description_match = re.search(r'<description>(.*?)</description>', record_text, re.DOTALL)
         
-        # Ищем все записи между тегами <record> и </record>
-        records = re.findall(r'<record>(.*?)</record>', content, re.DOTALL)
+        id_val = id_match.group(1).strip() if id_match else ''
+        service = service_match.group(1).strip() if service_match else ''
+        topic = topic_match.group(1).strip() if topic_match else ''
+        description = description_match.group(1).strip() if description_match else ''
         
-        for record in records:
-            try:
-                # Извлекаем данные с помощью регулярных выражений
-                id_match = re.search(r'<id>(.*?)</id>', record, re.DOTALL)
-                service_match = re.search(r'<service>(.*?)</service>', record, re.DOTALL)
-                topic_match = re.search(r'<topic>(.*?)</topic>', record, re.DOTALL)
-                
-                id_val = id_match.group(1).strip() if id_match else ''
-                service = service_match.group(1).strip() if service_match else ''
-                topic = topic_match.group(1).strip() if topic_match else ''
-                
-                # Извлекаем все вложения
-                attachments = re.findall(r'<attachments>(.*?)</attachments>', record, re.DOTALL)
-                attachments = [att.strip() for att in attachments if att.strip()]
-                
-                # Добавляем в словарь сервисов
-                services_data[service].append({
-                    'id': id_val,
-                    'topic': topic,
-                    'attachments': attachments
-                })
-                
-            except Exception as e:
-                print(f"Ошибка при обработке записи: {e}")
-                continue
+        # Извлекаем все вложения
+        attachments = re.findall(r'<attachments>(.*?)</attachments>', record_text, re.DOTALL)
+        attachments = [att.strip() for att in attachments if att.strip()]
+        
+        # Сохраняем всю запись как есть
+        full_record = record_text.strip()
+        
+        # Добавляем в словарь сервисов только если сервис в списке нужных
+        if service in service_mapping:
+            services_data[service].append({
+                'id': id_val,
+                'topic': topic,
+                'description': description,
+                'attachments': attachments,
+                'full_record': full_record
+            })
                 
     except Exception as e:
-        print(f"Ошибка при чтении файла: {e}")
-        
-    return services_data
+        print(f"Ошибка при обработке записи: {e}")
 
 def filter_and_organize_files(xml_path, data_folder, target_base_folder, service_mapping, extensions_to_keep):
     """
     Основная функция для фильтрации и организации файлов
     """
     try:
-        # Парсим XML с помощью регулярных выражений
-        services_data = parse_xml_with_regex(xml_path)
+        # Парсим XML с помощью эффективного парсера
+        services_data = parse_xml_efficiently(xml_path, service_mapping)
         
         # Создаем базовую целевую папку
         if not os.path.exists(target_base_folder):
@@ -61,6 +102,7 @@ def filter_and_organize_files(xml_path, data_folder, target_base_folder, service
         
         # Собираем все файлы из data_folder
         try:
+            print("Чтение файлов из папки...")
             all_files = set(os.listdir(data_folder))
         except Exception as e:
             print(f"Ошибка при чтении папки с файлами: {e}")
@@ -69,14 +111,16 @@ def filter_and_organize_files(xml_path, data_folder, target_base_folder, service
         # Словари для отслеживания
         files_to_keep = set()
         files_to_delete = set(all_files)
+        filtered_records = []
         
+        print("Фильтрация записей и файлов...")
         # Проходим по всем сервисам и записям
         for service, records in services_data.items():
-            # Пропускаем ненужные сервисы
-            if service not in service_mapping:
-                continue
-                
+            # Добавляем все записи этого сервиса в отфильтрованные
             for record in records:
+                filtered_records.append(record['full_record'])
+                
+                # Обрабатываем вложения
                 for attachment in record['attachments']:
                     _, ext = os.path.splitext(attachment)
                     
@@ -87,20 +131,18 @@ def filter_and_organize_files(xml_path, data_folder, target_base_folder, service
                             files_to_delete.remove(attachment)
         
         # Удаляем ненужные файлы
-        for filename in files_to_delete:
+        print("Удаление ненужных файлов...")
+        for filename in tqdm(files_to_delete, desc="Удаление файлов"):
             file_path = os.path.join(data_folder, filename)
             try:
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                    print(f"Удален файл: {filename}")
             except Exception as e:
                 print(f"Ошибка при удалении файла {filename}: {e}")
         
         # Перемещаем файлы по папкам сервисов
-        for service, records in services_data.items():
-            if service not in service_mapping:
-                continue
-                
+        print("Организация файлов по папкам...")
+        for service, records in tqdm(services_data.items(), desc="Обработка сервисов"):
             # Получаем английское название папки из словаря
             english_folder_name = service_mapping[service]
             
@@ -121,18 +163,20 @@ def filter_and_organize_files(xml_path, data_folder, target_base_folder, service
                         try:
                             if os.path.exists(src_path):
                                 shutil.move(src_path, dst_path)
-                                print(f"Перемещен {attachment} в папку {safe_folder_name}")
                         except Exception as e:
                             print(f"Ошибка при перемещении файла {attachment}: {e}")
         
-        # Создаем новый XML с отфильтрованными записями
-        create_filtered_xml(services_data, service_mapping, extensions_to_keep, target_base_folder)
+        # Создаем новый XML со всеми записями нужных сервисов
+        print("Создание нового XML файла...")
+        create_filtered_xml(filtered_records, target_base_folder)
         
         print(f"\nОбработка завершена!")
+        print(f"Сохранено записей: {len(filtered_records)}")
         print(f"Сохранено файлов: {len(files_to_keep)}")
         print(f"Удалено файлов: {len(files_to_delete)}")
         
         return {
+            'saved_records': len(filtered_records),
             'saved_files': len(files_to_keep),
             'deleted_files': len(files_to_delete)
         }
@@ -143,69 +187,93 @@ def filter_and_organize_files(xml_path, data_folder, target_base_folder, service
         traceback.print_exc()
         return None
 
-def create_filtered_xml(services_data, service_mapping, extensions_to_keep, target_base_folder):
+def create_filtered_xml(filtered_records, target_base_folder):
     """
     Создает новый XML файл с отфильтрованными записями
     """
     try:
         # Создаем корневой элемент
-        root = '<?xml version="1.0" encoding="UTF-8"?>\n<data>\n'
+        xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n<data>\n'
         
-        # Добавляем записи
-        for service, records in services_data.items():
-            if service not in service_mapping:
-                continue
-                
-            for record in records:
-                # Проверяем, есть ли вложения с нужными расширениями
-                has_valid_attachments = False
-                for attachment in record['attachments']:
-                    _, ext = os.path.splitext(attachment)
-                    if ext.lower() in extensions_to_keep:
-                        has_valid_attachments = True
-                        break
-                
-                if has_valid_attachments:
-                    root += '  <record>\n'
-                    root += f'    <id>{record["id"]}</id>\n'
-                    root += f'    <service>{service}</service>\n'
-                    root += f'    <topic>{record["topic"]}</topic>\n'
-                    
-                    for attachment in record['attachments']:
-                        _, ext = os.path.splitext(attachment)
-                        if ext.lower() in extensions_to_keep:
-                            root += f'    <attachments>{attachment}</attachments>\n'
-                    
-                    root += '  </record>\n'
+        # Добавляем все отфильтрованные записи
+        for record in tqdm(filtered_records, desc="Создание XML"):
+            xml_content += f"{record}\n"
         
-        root += '</data>'
+        xml_content += '</data>'
         
         # Сохраняем XML
         new_xml_path = os.path.join(target_base_folder, "filtered_data.xml")
         with open(new_xml_path, 'w', encoding='utf-8') as f:
-            f.write(root)
+            f.write(xml_content)
         
         print(f"Создан новый XML файл: {new_xml_path}")
         
     except Exception as e:
         print(f"Ошибка при создании XML: {e}")
 
+# Функция для проверки структуры XML файла
+def check_xml_structure(xml_path):
+    """
+    Проверяет структуру XML файла и выводит информацию о нем
+    """
+    print("Проверка структуры XML файла...")
+    
+    try:
+        with open(xml_path, 'r', encoding='utf-8', errors='replace') as f:
+            first_lines = [next(f) for _ in range(10)]
+        
+        print("Первые 10 строк файла:")
+        for i, line in enumerate(first_lines, 1):
+            print(f"{i}: {line.strip()}")
+            
+        # Проверяем наличие основных тегов
+        content = ''.join(first_lines)
+        has_record = '<record>' in content
+        has_data = '<data>' in content
+        
+        print(f"\nНаличие тега <data>: {has_data}")
+        print(f"Наличие тега <record>: {has_record}")
+        
+        # Подсчет записей
+        record_count = 0
+        with open(xml_path, 'r', encoding='utf-8', errors='replace') as f:
+            for line in f:
+                if '<record>' in line:
+                    record_count += 1
+        
+        print(f"Общее количество записей: {record_count}")
+        
+    except Exception as e:
+        print(f"Ошибка при проверке структуры файла: {e}")
+
 # Использование
-xml_path = '/полный/путь/к/вашему/файлу.xml'
-data_folder = '/полный/путь/к/папке/с/файлами'
-target_base_folder = '/полный/путь/к/целевой/папке'
+if __name__ == "__main__":
+    xml_path = '/полный/путь/к/вашему/файлу.xml'
+    data_folder = '/полный/путь/к/папке/с/файлами'
+    target_base_folder = '/полный/путь/к/целевой/папке'
 
-# Словарь сопоставления русских названий сервисов с английскими названиями папок
-service_mapping = {
-    'Техническая поддержка': 'Technical_Support',
-    'Бухгалтерия': 'Accounting',
-    'Юридический отдел': 'Legal_Department',
-    'Отдел кадров': 'HR_Department',
-    'ИТ отдел': 'IT_Department'
-}
+    # Словарь сопоставления русских названий сервисов с английскими названиями папок
+    service_mapping = {
+        'Техническая поддержка': 'Technical_Support',
+        'Бухгалтерия': 'Accounting',
+        'Юридический отдел': 'Legal_Department',
+        'Отдел кадров': 'HR_Department',
+        'ИТ отдел': 'IT_Department'
+    }
 
-# Список расширений, которые нужно сохранить (в нижнем регистре)
-extensions_to_keep = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.jpg', '.jpeg', '.png', '.txt']
+    # Список расширений, которые нужно сохранить (в нижнем регистре)
+    extensions_to_keep = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.jpg', '.jpeg', '.png', '.txt']
 
-# Запуск функции
-stats = filter_and_organize_files(xml_path, data_folder, target_base_folder, service_mapping, extensions_to_keep)
+    # Сначала проверяем структуру XML файла
+    check_xml_structure(xml_path)
+    
+    # Запуск основной функции
+    stats = filter_and_organize_files(xml_path, data_folder, target_base_folder, service_mapping, extensions_to_keep)
+    
+    if stats:
+        print(f"\nРезультаты обработки:")
+        print(f"- Сохранено записей: {stats['saved_records']}")
+        print(f"- Сохранено файлов: {stats['saved_files']}")
+        print(f"- Удалено файлов: {stats['deleted_files']}")
+    else:
+        print("Обработка завершилась с ошибкой.")
