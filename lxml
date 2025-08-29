@@ -37,9 +37,12 @@ def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, ser
                 records = re.findall(r'<record>(.*?)</record>', xml_content, re.DOTALL)
                 for record_content in records:
                     try:
+                        # Создаем временный элемент для записи
                         record_elem = etree.fromstring(f"<record>{record_content}</record>")
+                        # Добавляем запись к корневому элементу
                         root.append(record_elem)
-                    except:
+                    except Exception as e:
+                        print(f"Не удалось обработать запись: {e}")
                         continue
             else:
                 print("Не удалось найти корневой элемент")
@@ -67,7 +70,10 @@ def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, ser
         updated_records = []
         services_to_keep = list(service_mapping.keys())
         
-        for record in root.findall('record'):
+        # Находим все записи
+        records = root.findall('.//record') if hasattr(root, 'findall') else []
+        
+        for record in records:
             try:
                 service_elem = record.find('service')
                 service = service_elem.text.strip() if service_elem is not None and service_elem.text else ''
@@ -105,15 +111,18 @@ def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, ser
         # Удаление файлов
         for filename in files_to_delete:
             try:
-                os.remove(os.path.join(data_folder, filename))
-                print(f"Удален: {filename}")
+                file_path = os.path.join(data_folder, filename)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"Удален: {filename}")
             except Exception as e:
                 print(f"Ошибка удаления {filename}: {e}")
         
         # Перемещение файлов
         for record in updated_records:
             try:
-                service = record.find('service').text.strip()
+                service_elem = record.find('service')
+                service = service_elem.text.strip() if service_elem is not None and service_elem.text else ''
                 english_folder = service_mapping.get(service, service)
                 safe_folder = "".join(c for c in english_folder if c.isalnum() or c in (' ', '-', '_')).rstrip()
                 service_folder = os.path.join(target_base_folder, safe_folder)
@@ -122,37 +131,49 @@ def filter_xml_and_organize_files(xml_path, data_folder, target_base_folder, ser
                     os.makedirs(service_folder)
                 
                 for att in record.findall('attachments'):
-                    filename = att.text.strip()
-                    src = os.path.join(data_folder, filename)
-                    dst = os.path.join(service_folder, filename)
-                    
-                    if os.path.exists(src):
-                        shutil.move(src, dst)
-                        print(f"Перемещен: {filename} -> {safe_folder}")
+                    if att.text is not None:
+                        filename = att.text.strip()
+                        src = os.path.join(data_folder, filename)
+                        dst = os.path.join(service_folder, filename)
                         
+                        if os.path.exists(src):
+                            shutil.move(src, dst)
+                            print(f"Перемещен: {filename} -> {safe_folder}")
+                            
             except Exception as e:
                 print(f"Ошибка перемещения: {e}")
                 continue
         
         # Сохранение нового XML
-        new_root = etree.Element(root.tag)
-        for record in updated_records:
-            new_root.append(record)
-        
-        new_tree = etree.ElementTree(new_root)
-        new_xml_path = os.path.join(target_base_folder, "filtered_data.xml")
-        new_tree.write(new_xml_path, encoding='utf-8', xml_declaration=True, pretty_print=True)
-        
-        print(f"\nФильтрация завершена:")
-        print(f"Сохрано записей: {len(updated_records)}")
-        print(f"Сохранено файлов: {len(files_to_keep)}")
-        print(f"Удалено файлов: {len(files_to_delete)}")
-        
-        return {
-            'remaining_records': len(updated_records),
-            'saved_files': len(files_to_keep),
-            'deleted_files': len(files_to_delete)
-        }
+        try:
+            # Создаем новый корневой элемент с тем же тегом, что и оригинальный
+            new_root = etree.Element(root.tag)
+            
+            # Добавляем все обновленные записи
+            for record in updated_records:
+                new_root.append(record)
+            
+            # Создаем дерево и сохраняем
+            new_tree = etree.ElementTree(new_root)
+            new_xml_path = os.path.join(target_base_folder, "filtered_data.xml")
+            
+            with open(new_xml_path, 'wb') as f:
+                new_tree.write(f, encoding='utf-8', xml_declaration=True, pretty_print=True)
+            
+            print(f"\nФильтрация завершена:")
+            print(f"Сохрано записей: {len(updated_records)}")
+            print(f"Сохранено файлов: {len(files_to_keep)}")
+            print(f"Удалено файлов: {len(files_to_delete)}")
+            
+            return {
+                'remaining_records': len(updated_records),
+                'saved_files': len(files_to_keep),
+                'deleted_files': len(files_to_delete)
+            }
+            
+        except Exception as e:
+            print(f"Ошибка при сохранении XML: {e}")
+            return None
             
     except Exception as e:
         print(f"Критическая ошибка: {e}")
